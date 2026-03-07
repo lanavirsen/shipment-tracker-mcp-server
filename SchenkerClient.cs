@@ -13,6 +13,7 @@ public class SchenkerClient
     // The search API URL uses a query parameter instead (e.g. /shipments?query=...)
     // The trailing slash makes them unambiguous without extra checks
     private const string DetailApiUrlFragment = "/tracking-public/shipments/";
+    private const string SearchApiUrlFragment = "shipments?query=";
 
     private const int TimeoutMs = 60_000;
 
@@ -40,16 +41,38 @@ public class SchenkerClient
         page.Response += (_, response) =>
             Console.Error.WriteLine($"[DEBUG] Response: {response.Status} {response.Url}");
 
-        // Register the listener before navigating — the browser will make the API call
-        // as part of loading the page, and we capture the response via network interception.
-        // Wait specifically for a successful (200) detail response — the page may first receive
-        // a 429 (rate limited) and then retry with a valid captcha token.
+        // Register both listeners before navigating so we don't miss any responses.
+        // The page may first receive a 429 (rate limited) on either call before retrying
+        // with a valid captcha token — we wait specifically for the 200 responses.
+        var searchResponseTask = page.WaitForResponseAsync(
+            r => r.Url.Contains($"{SearchApiUrlFragment}{referenceNumber}") && r.Status == 200,
+            new PageWaitForResponseOptions { Timeout = TimeoutMs });
+
         var detailResponseTask = page.WaitForResponseAsync(
             r => r.Url.Contains(DetailApiUrlFragment) && r.Status == 200,
             new PageWaitForResponseOptions { Timeout = TimeoutMs });
 
         await page.GotoAsync(
             $"{TrackingPageUrl}?refNumber={referenceNumber}&language_region=en-US_US&uiMode=");
+
+        // Check search result first — if empty, the reference number doesn't exist and
+        // the detail API will never be called, so we throw early instead of timing out
+        var searchResponse = await searchResponseTask;
+        var searchJson = await searchResponse.TextAsync();
+        Console.Error.WriteLine($"[DEBUG] Search JSON: {searchJson}");
+        var searchResult = JsonSerializer.Deserialize<SchenkerSearchResponse>(searchJson, DeserializeOptions);
+        Console.Error.WriteLine($"[DEBUG] Search result count: {searchResult?.Result?.Count}");
+
+        if (searchResult?.Result is null || searchResult.Result.Count == 0)
+            throw new InvalidOperationException($"No shipment found for reference number '{referenceNumber}'.");
+
+        // If search returns results but none are an exact match for this reference, the page
+        // shows a disambiguation list and never calls the detail API. Race the detail task
+        // against a post-search timeout so we fail fast with a clear error instead of
+        // waiting the full 60s.
+        var postSearchTimeout = Task.Delay(20_000);
+        if (await Task.WhenAny(detailResponseTask, postSearchTimeout) == postSearchTimeout)
+            throw new InvalidOperationException($"No shipment found for reference number '{referenceNumber}'.");
 
         var detailResponse = await detailResponseTask;
         var json = await detailResponse.TextAsync();

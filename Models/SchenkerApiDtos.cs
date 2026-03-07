@@ -2,9 +2,21 @@ using System.Text.Json.Serialization;
 
 namespace ShipmentTrackerMcp.Models;
 
-// These types mirror the DB Schenker detail API response shape exactly.
+// These types mirror the DB Schenker API response shapes exactly.
 // They are internal - only SchenkerClient uses them to deserialize the raw JSON.
 
+// Step 1 search response — used to detect whether the reference number exists
+internal record SchenkerSearchResponse
+{
+    public List<SchenkerSearchResult> Result { get; init; } = [];
+}
+
+internal record SchenkerSearchResult
+{
+    public string Id { get; init; } = "";
+}
+
+// Step 2 detail response
 internal record SchenkerShipmentResponse
 {
     public string SttNumber { get; init; } = "";
