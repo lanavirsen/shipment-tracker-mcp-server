@@ -37,10 +37,6 @@ public class SchenkerClient
             UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
         });
 
-        // DEBUG: log every response URL to stderr so we can see what the browser is requesting
-        page.Response += (_, response) =>
-            Console.Error.WriteLine($"[DEBUG] Response: {response.Status} {response.Url}");
-
         // Register both listeners before navigating so we don't miss any responses.
         // The page may first receive a 429 (rate limited) on either call before retrying
         // with a valid captcha token — we wait specifically for the 200 responses.
@@ -59,9 +55,7 @@ public class SchenkerClient
         // the detail API will never be called, so we throw early instead of timing out
         var searchResponse = await searchResponseTask;
         var searchJson = await searchResponse.TextAsync();
-        Console.Error.WriteLine($"[DEBUG] Search JSON: {searchJson}");
         var searchResult = JsonSerializer.Deserialize<SchenkerSearchResponse>(searchJson, DeserializeOptions);
-        Console.Error.WriteLine($"[DEBUG] Search result count: {searchResult?.Result?.Count}");
 
         if (searchResult?.Result is null || searchResult.Result.Count == 0)
             throw new InvalidOperationException($"No shipment found for reference number '{referenceNumber}'.");
