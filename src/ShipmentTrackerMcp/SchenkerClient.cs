@@ -84,7 +84,7 @@ public class SchenkerClient
     }
 
     // Maps the raw API DTO to the clean ShipmentResult output model.
-    private static ShipmentResult MapToResult(string referenceNumber, SchenkerShipmentResponse dto)
+    internal static ShipmentResult MapToResult(string referenceNumber, SchenkerShipmentResponse dto)
     {
         static string? FormatMeasurement(SchenkerMeasurement? m) =>
             m is null ? null : $"{m.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} {m.Unit}";
