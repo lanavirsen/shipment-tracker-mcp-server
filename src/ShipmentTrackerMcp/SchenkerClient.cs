@@ -87,7 +87,7 @@ public class SchenkerClient
     private static ShipmentResult MapToResult(string referenceNumber, SchenkerShipmentResponse dto)
     {
         static string? FormatMeasurement(SchenkerMeasurement? m) =>
-            m is null ? null : $"{m.Value} {m.Unit}";
+            m is null ? null : $"{m.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} {m.Unit}";
 
         static string FormatDate(DateTime dt) =>
             dt.ToString("yyyy-MM-dd HH:mm UTC");
