@@ -45,7 +45,7 @@ internal record SchenkerGoods
     public SchenkerMeasurement? Weight { get; init; }
     public SchenkerMeasurement? Volume { get; init; }
     public SchenkerMeasurement? LoadingMeters { get; init; }
-    public bool Stackable { get; init; }
+    public bool? Stackable { get; init; }
 }
 
 internal record SchenkerMeasurement

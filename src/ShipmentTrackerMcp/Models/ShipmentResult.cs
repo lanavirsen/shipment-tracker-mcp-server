@@ -26,7 +26,7 @@ public record GoodsInfo(
     string? Weight,
     string? Volume,
     string? LoadingMeters,
-    bool Stackable
+    bool? Stackable
 );
 
 public record DeliveryInfo(string? Estimated, string? Agreed);

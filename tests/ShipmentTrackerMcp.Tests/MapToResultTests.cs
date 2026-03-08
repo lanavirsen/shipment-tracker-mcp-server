@@ -40,7 +40,7 @@ public class MapToResultTests
         Assert.Equal("100.5 KG", result.Goods.Weight);
         Assert.Equal("0.8 M3", result.Goods.Volume);
         Assert.Equal("1.2 LM", result.Goods.LoadingMeters);
-        Assert.True(result.Goods.Stackable);
+        Assert.True(result.Goods.Stackable == true);
     }
 
     [Fact]
