@@ -55,13 +55,7 @@ After updating the config, restart Claude Desktop. You can then ask Claude to tr
 
 ## Testing with real shipments
 
-Once connected to an MCP client, try these reference numbers:
-
-| Reference Number |
-|------------------|
-| 1806290829       |
-| 1806203236       |
-| 1806273700       |
+Once connected to an MCP client, try reference number `1806290829`.
 
 To test error handling, use an invalid reference such as `0000000000` - the tool should return a "not found" error rather than timing out.
 
