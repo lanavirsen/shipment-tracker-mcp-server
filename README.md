@@ -24,7 +24,8 @@ cd shipment-tracker-mcp-server
 
 ```bash
 dotnet build --configuration Release src/ShipmentTrackerMcp
-dotnet run --no-build --configuration Release --project src/ShipmentTrackerMcp -- playwright install chromium
+dotnet tool install --global Microsoft.Playwright.CLI
+playwright install chromium
 ```
 
 ## Connecting to an MCP client
