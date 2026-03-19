@@ -1,10 +1,11 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using ShipmentTrackerMcp.Models;
 
 namespace ShipmentTrackerMcp;
 
-public class SchenkerClient(HttpClient http)
+public class SchenkerClient(HttpClient http, ILogger<SchenkerClient> logger)
 {
     private const string BaseApiUrl = "https://www.dbschenker.com/nges-portal/api/public/tracking-public";
 
@@ -16,15 +17,8 @@ public class SchenkerClient(HttpClient http)
     public async Task<ShipmentResult> FetchShipmentAsync(string referenceNumber)
     {
         // Step 1: resolve reference number to an internal shipment ID
-        var searchResponse = await http.GetAsync($"{BaseApiUrl}/shipments?query={referenceNumber}");
-
-        if (searchResponse.StatusCode == HttpStatusCode.TooManyRequests)
-        {
-            var hasPuzzle = searchResponse.Headers.Contains("Captcha-Puzzle");
-            throw new InvalidOperationException(
-                $"Rate limited by search API. Captcha-Puzzle header present: {hasPuzzle}.");
-        }
-
+        var searchResponse = await GetWithCaptchaAsync(
+            $"{BaseApiUrl}/shipments?query={referenceNumber}");
         searchResponse.EnsureSuccessStatusCode();
 
         var searchJson = await searchResponse.Content.ReadAsStringAsync();
@@ -37,16 +31,8 @@ public class SchenkerClient(HttpClient http)
         var mode = match.TransportMode.ToLowerInvariant();
 
         // Step 2: fetch full shipment details using the internal ID and transport mode
-        var detailResponse = await http.GetAsync(
-            $"{BaseApiUrl}/shipments/{mode}/{Uri.EscapeDataString(match.Id)}");
-
-        if (detailResponse.StatusCode == HttpStatusCode.TooManyRequests)
-        {
-            var hasPuzzle = detailResponse.Headers.Contains("Captcha-Puzzle");
-            throw new InvalidOperationException(
-                $"Rate limited by detail API. Captcha-Puzzle header present: {hasPuzzle}.");
-        }
-
+        var detailResponse = await GetWithCaptchaAsync(
+            $"{BaseApiUrl}/shipments/{mode}/{match.Id}");
         detailResponse.EnsureSuccessStatusCode();
 
         var json = await detailResponse.Content.ReadAsStringAsync();
@@ -54,6 +40,33 @@ public class SchenkerClient(HttpClient http)
             ?? throw new InvalidOperationException("Failed to deserialize shipment response.");
 
         return MapToResult(referenceNumber, dto);
+    }
+
+    // Makes a GET request and, on a 429 with a Captcha-Puzzle header, solves the
+    // proof-of-work challenge and retries once with the Captcha-Solution header.
+    private async Task<HttpResponseMessage> GetWithCaptchaAsync(string url)
+    {
+        var response = await http.GetAsync(url);
+        if (response.StatusCode != HttpStatusCode.TooManyRequests)
+            return response;
+
+        if (!response.Headers.TryGetValues("Captcha-Puzzle", out var puzzleValues))
+            throw new InvalidOperationException("Rate limited but no Captcha-Puzzle header found.");
+
+        var solution = CaptchaSolver.Solve(puzzleValues.First());
+
+        var retry = new HttpRequestMessage(HttpMethod.Get, url);
+        retry.Headers.Add("Captcha-Solution", solution);
+        var retryResponse = await http.SendAsync(retry);
+
+        if (!retryResponse.IsSuccessStatusCode)
+        {
+            var body = await retryResponse.Content.ReadAsStringAsync();
+            logger.LogError("Captcha retry failed with {StatusCode}. Body: {Body}",
+                retryResponse.StatusCode, body[..Math.Min(500, body.Length)]);
+        }
+
+        return retryResponse;
     }
 
     // Maps the raw API DTO to the clean ShipmentResult output model.
@@ -113,12 +126,19 @@ public class SchenkerClient(HttpClient http)
             dto.References.WaybillNumbers
         );
 
+        var activeStep =
+            dto.ProgressBar is { } pb &&
+            pb.ValueKind == JsonValueKind.Object &&
+            pb.TryGetProperty("activeStep", out var step)
+                ? step.GetString() ?? ""
+                : "";
+
         return new ShipmentResult(
             referenceNumber,
             dto.SttNumber,
             dto.TransportMode,
             dto.Product,
-            dto.ProgressBar.ActiveStep,
+            activeStep,
             sender,
             receiver,
             goods,

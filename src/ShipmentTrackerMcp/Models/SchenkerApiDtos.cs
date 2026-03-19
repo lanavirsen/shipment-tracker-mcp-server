@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace ShipmentTrackerMcp.Models;
@@ -28,7 +29,7 @@ internal record SchenkerShipmentResponse
     public string? Product { get; init; }
     public SchenkerDeliveryDate? DeliveryDate { get; init; }
     public string TransportMode { get; init; } = "";
-    public SchenkerProgressBar ProgressBar { get; init; } = new();
+    public JsonElement? ProgressBar { get; init; }
     public SchenkerLocation Location { get; init; } = new();
 }
 
@@ -87,11 +88,6 @@ internal record SchenkerDeliveryDate
 {
     public DateTime? Estimated { get; init; }
     public DateTime? Agreed { get; init; }
-}
-
-internal record SchenkerProgressBar
-{
-    public string ActiveStep { get; init; } = "";
 }
 
 internal record SchenkerLocation

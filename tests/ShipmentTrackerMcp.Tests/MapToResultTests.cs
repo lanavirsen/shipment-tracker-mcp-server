@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ShipmentTrackerMcp.Models;
 
 namespace ShipmentTrackerMcp.Tests;
@@ -11,7 +12,7 @@ public class MapToResultTests
         SttNumber = "SESRA551153301",
         TransportMode = "LAND",
         Product = "SYSTEM",
-        ProgressBar = new SchenkerProgressBar { ActiveStep = "Delivered" },
+        ProgressBar = JsonSerializer.Deserialize<JsonElement>("{\"activeStep\":\"Delivered\"}"),
         Location = new SchenkerLocation(),
         Goods = new SchenkerGoods { Pieces = 1 },
         References = new SchenkerReferences(),
