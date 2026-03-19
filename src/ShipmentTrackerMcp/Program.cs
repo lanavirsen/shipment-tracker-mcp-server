@@ -10,7 +10,15 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 
-builder.Services.AddSingleton<SchenkerClient>();
+builder.Services.AddHttpClient<SchenkerClient>(client =>
+{
+    // Mimic a real browser request so the API doesn't reject us outright.
+    client.DefaultRequestHeaders.Add("User-Agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36");
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.DefaultRequestHeaders.Add("Referer",
+        "https://www.dbschenker.com/app/tracking-public/");
+});
 
 builder.Services
     .AddMcpServer(_ => { })

@@ -1,21 +1,12 @@
+using System.Net;
 using System.Text.Json;
-using Microsoft.Playwright;
 using ShipmentTrackerMcp.Models;
 
 namespace ShipmentTrackerMcp;
 
-public class SchenkerClient
+public class SchenkerClient(HttpClient http)
 {
-    // The page that triggers the underlying API calls when loaded
-    private const string TrackingPageUrl = "https://www.dbschenker.com/app/tracking-public/";
-
-    // The detail API URL contains a path segment after /shipments/ (e.g. /shipments/land/LandStt:...)
-    // The search API URL uses a query parameter instead (e.g. /shipments?query=...)
-    // The trailing slash makes them unambiguous without extra checks
-    private const string DetailApiUrlFragment = "/tracking-public/shipments/";
-    private const string SearchApiUrlFragment = "shipments?query=";
-
-    private const int TimeoutMs = 60_000;
+    private const string BaseApiUrl = "https://www.dbschenker.com/nges-portal/api/public/tracking-public";
 
     private static readonly JsonSerializerOptions DeserializeOptions = new()
     {
@@ -24,53 +15,41 @@ public class SchenkerClient
 
     public async Task<ShipmentResult> FetchShipmentAsync(string referenceNumber)
     {
-        using var playwright = await Playwright.CreateAsync();
-        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        // Step 1: resolve reference number to an internal shipment ID
+        var searchResponse = await http.GetAsync($"{BaseApiUrl}/shipments?query={referenceNumber}");
+
+        if (searchResponse.StatusCode == HttpStatusCode.TooManyRequests)
         {
-            Headless = true,
-            // Suppress the automation flag that sites use to detect headless browsers
-            Args = ["--disable-blink-features=AutomationControlled"]
-        });
+            var hasPuzzle = searchResponse.Headers.Contains("Captcha-Puzzle");
+            throw new InvalidOperationException(
+                $"Rate limited by search API. Captcha-Puzzle header present: {hasPuzzle}.");
+        }
 
-        var page = await browser.NewPageAsync(new BrowserNewPageOptions
-        {
-            UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
-        });
+        searchResponse.EnsureSuccessStatusCode();
 
-        // Register both listeners before navigating so we don't miss any responses.
-        // The page may first receive a 429 (rate limited) on either call before retrying
-        // with a valid captcha token — we wait specifically for the 200 responses.
-        var searchResponseTask = page.WaitForResponseAsync(
-            r => r.Url.Contains($"{SearchApiUrlFragment}{referenceNumber}") && r.Status == 200,
-            new PageWaitForResponseOptions { Timeout = TimeoutMs });
-
-        var detailResponseTask = page.WaitForResponseAsync(
-            r => r.Url.Contains(DetailApiUrlFragment) && r.Status == 200,
-            new PageWaitForResponseOptions { Timeout = TimeoutMs });
-
-        await page.GotoAsync(
-            $"{TrackingPageUrl}?refNumber={referenceNumber}&language_region=en-US_US&uiMode=");
-
-        // Check search result first — if empty, the reference number doesn't exist and
-        // the detail API will never be called, so we throw early instead of timing out
-        var searchResponse = await searchResponseTask;
-        var searchJson = await searchResponse.TextAsync();
+        var searchJson = await searchResponse.Content.ReadAsStringAsync();
         var searchResult = JsonSerializer.Deserialize<SchenkerSearchResponse>(searchJson, DeserializeOptions);
 
         if (searchResult?.Result is null || searchResult.Result.Count == 0)
             throw new InvalidOperationException($"No shipment found for reference number '{referenceNumber}'.");
 
-        // If search returns results but none are an exact match for this reference, the page
-        // shows a disambiguation list and never calls the detail API. Race the detail task
-        // against a post-search timeout so we fail fast with a clear error instead of
-        // waiting the full 60s.
-        var postSearchTimeout = Task.Delay(20_000);
-        if (await Task.WhenAny(detailResponseTask, postSearchTimeout) == postSearchTimeout)
-            throw new InvalidOperationException($"No shipment found for reference number '{referenceNumber}'.");
+        var match = searchResult.Result[0];
+        var mode = match.TransportMode.ToLowerInvariant();
 
-        var detailResponse = await detailResponseTask;
-        var json = await detailResponse.TextAsync();
+        // Step 2: fetch full shipment details using the internal ID and transport mode
+        var detailResponse = await http.GetAsync(
+            $"{BaseApiUrl}/shipments/{mode}/{Uri.EscapeDataString(match.Id)}");
 
+        if (detailResponse.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            var hasPuzzle = detailResponse.Headers.Contains("Captcha-Puzzle");
+            throw new InvalidOperationException(
+                $"Rate limited by detail API. Captcha-Puzzle header present: {hasPuzzle}.");
+        }
+
+        detailResponse.EnsureSuccessStatusCode();
+
+        var json = await detailResponse.Content.ReadAsStringAsync();
         var dto = JsonSerializer.Deserialize<SchenkerShipmentResponse>(json, DeserializeOptions)
             ?? throw new InvalidOperationException("Failed to deserialize shipment response.");
 

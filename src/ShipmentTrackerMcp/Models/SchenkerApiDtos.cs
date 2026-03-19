@@ -14,6 +14,7 @@ internal record SchenkerSearchResponse
 internal record SchenkerSearchResult
 {
     public string Id { get; init; } = "";
+    public string TransportMode { get; init; } = "";
 }
 
 // Step 2 detail response
